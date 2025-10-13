@@ -1,5 +1,3 @@
-from itertools import cycle
-
 # Konversi string ke bit
 def text_to_bits(text):
     return ''.join(f'{ord(c):08b}' for c in text)
