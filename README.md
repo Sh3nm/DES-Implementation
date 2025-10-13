@@ -1,2 +1,2 @@
-Nama: Huraira Shenmue Mahanee
-NRP: 5025231216
+- **Nama** : Huraira Shenmue Mahanee  
+- **NRP** : 5025231216
