@@ -81,12 +81,12 @@ def handle_client(conn, addr, private_key, mode):
 
 def start_server(host, port, mode):
     # Generate RSA Key Pair
-    print("🔑 Generating RSA key pair...")
+    print("Generating RSA key pair...")
     public_key, private_key = generate_keys(bits=256)
     e, n = public_key
     d, n_priv = private_key
 
-    print("✅ RSA Keys Generated:")
+    print("RSA Keys Generated:")
     print(f"   Public Key (e, n):")
     print(f"     e = {e}")
     print(f"     n = {n}")
@@ -98,7 +98,7 @@ def start_server(host, port, mode):
     s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     s.bind((host, port))
     s.listen(2)  #Support multiple clients
-    print(f"🚀 Server listening on {host}:{port}")
+    print(f"Server listening on {host}:{port}")
     print(f"   DES Mode: {mode.upper()}")
     print(f"   Ready for multiple clients...\n")
 
@@ -120,7 +120,7 @@ def start_server(host, port, mode):
             client_thread.start()
             
     except KeyboardInterrupt:
-        print("\n\n🛑 Server shutting down...")
+        print("\n\nServer shutting down...")
     finally:
         s.close()
         print("Server stopped.")
