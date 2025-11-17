@@ -1,6 +1,6 @@
 import socket
 import argparse
-from rsa import rsa_encrypt, import_public_key
+from rsa import rsa_decrypt, generate_keys, export_public_key
 from des import (
     des_encrypt_ecb, des_decrypt_ecb,
     des_encrypt_cbc, des_decrypt_cbc
@@ -8,74 +8,99 @@ from des import (
 import os
 
 
-def start_client(host, port, key, iv, mode):
-    # ==== IF KEY OR IV NOT PROVIDED ====
-    if key is None:
-        key = input("Masukkan DES KEY (8 chars) atau tekan Enter untuk random: ")
-        if key == "":
-            key = os.urandom(8).decode(errors="ignore")[:8]
-        print("DES KEY =", key)
+def start_server(host, port, mode):
 
-    if iv is None:
-        iv = input("Masukkan DES IV (8 chars) atau tekan Enter untuk random: ")
-        if iv == "":
-            iv = os.urandom(8).decode(errors="ignore")[:8]
-        print("DES IV =", iv)
-
-    # ==== CONNECT ====
-    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    s.connect((host, port))
-    print(f"Connected to server {host}:{port} (mode: {mode.upper()})")
-
-    # ==== RECEIVE PUBLIC KEY ====
-    pub_bytes = s.recv(1024)
-    public_key = import_public_key(pub_bytes)
+    # Generate RSA Key Pair
+    print("Generating RSA key pair...")
+    public_key, private_key = generate_keys(bits=256)
     e, n = public_key
+    d, n_priv = private_key
 
-    print("\nReceived RSA Public Key:")
+    print("RSA Public Key:")
     print("e =", e)
     print("n =", n)
+    print("RSA Private Key:")
+    print("d =", d)
 
-    # ==== CREATE SESSION ====
-    key_bytes = key.encode()
-    iv_bytes = iv.encode()
+    # Nyalain server
+    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    s.bind((host, port))
+    s.listen(1)
+    print(f"\nServer running on {host}:{port} (mode: {mode.upper()})")
 
-    session = key_bytes + iv_bytes
-    session_int = int.from_bytes(session, "big")
+    conn, addr = s.accept()
+    print(f"Connected from {addr}")
 
-    encrypted_session_int = rsa_encrypt(session_int, public_key)
-    s.sendall(str(encrypted_session_int).encode())
+    # Kirim public key
+    pub_bytes = export_public_key(public_key)
+    conn.sendall(pub_bytes)
+    print("Public key sent to client.")
 
-    print("\nDES Session key dikirim.")
-    print("\n===== Chat dimulai =====\n")
+    # Terima enkripsi session key
+    encrypted_session = conn.recv(4096).decode()
+    encrypted_session_int = int(encrypted_session)
 
-    # ==== CHAT LOOP ====
+    # Decrypt session key
+    decrypted_session_int = pow(encrypted_session_int, d, n)
+
+    # Convert ke 16 byte
+    session_bytes = decrypted_session_int.to_bytes(16, "big")
+
+    # Extract key and IV 
+    key = session_bytes[:8].rstrip(b'\x00').decode('latin-1')
+    iv = session_bytes[8:16].rstrip(b'\x00').decode('latin-1')
+    
+    # Pasin 8 karakter buat DES
+    key = (key + '0' * 8)[:8]
+    iv = (iv + '0' * 8)[:8]
+
+    print("\nReceived DES session key:")
+    print("KEY =", key)
+    print("IV =", iv)
+    print("\nChat Starting\n")
+
     while True:
-        msg = input("Client > ")
-
-        if msg.lower() == "exit":
-            s.sendall(b"exit")
+        data = conn.recv(4096)
+        if not data:
             break
 
-        # Encrypt
-        if mode == "cbc":
-            cipher = des_encrypt_cbc(msg, key, iv)
-        else:
-            cipher = des_encrypt_ecb(msg, key)
-
-        s.sendall(cipher.encode())
-
-        # Receive reply
-        reply_cipher = s.recv(4096).decode()
-        if reply_cipher.lower() == "exit":
-            print("Server exited.")
+        cipher_hex = data.decode()
+        if cipher_hex.lower() == "exit":
+            print("Client disconnected.")
             break
 
+        # Decrypt message
         if mode == "cbc":
-            reply_plain = des_decrypt_cbc(reply_cipher, key, iv)
+            decrypted = des_decrypt_cbc(cipher_hex, key, iv)
         else:
-            reply_plain = des_decrypt_ecb(reply_cipher, key)
+            decrypted = des_decrypt_ecb(cipher_hex, key)
 
-        print("Server >", reply_plain)
+        print("Client: ", decrypted)
 
+        # Server reply
+        reply = input("Server: ")
+        if reply.lower() == "exit":
+            conn.sendall(b"exit")
+            break
+
+        # Encrypt reply
+        if mode == "cbc":
+            encrypted_reply = des_encrypt_cbc(reply, key, iv)
+        else:
+            encrypted_reply = des_encrypt_ecb(reply, key)
+
+        conn.sendall(encrypted_reply.encode())
+
+    conn.close()
     s.close()
+    print("Server stopped.")
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--host", default="127.0.0.1")
+    parser.add_argument("--port", type=int, default=65433)
+    parser.add_argument("--mode", choices=["ecb", "cbc"], default="ecb")
+    args = parser.parse_args()
+
+    start_server(args.host, args.port, args.mode)

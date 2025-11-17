@@ -4,23 +4,44 @@ def modexp(base, exp, mod):
     return pow(base, exp, mod)
 
 
-# Generate random angka prima
-def is_prime(n):
+# Miller-Rabin primality test (fast for large numbers)
+def is_prime(n, k=10):
     if n < 2:
         return False
+    if n == 2 or n == 3:
+        return True
     if n % 2 == 0:
-        return n == 2
+        return False
     
-    r = int(n ** 0.5)
-    for i in range(3, r + 1, 2):
-        if n % i == 0:
+    # Write n-1 as 2^r * d
+    r, d = 0, n - 1
+    while d % 2 == 0:
+        r += 1
+        d //= 2
+    
+    # Witness loop
+    for _ in range(k):
+        a = random.randrange(2, n - 1)
+        x = pow(a, d, n)
+        
+        if x == 1 or x == n - 1:
+            continue
+        
+        for _ in range(r - 1):
+            x = pow(x, 2, n)
+            if x == n - 1:
+                break
+        else:
             return False
+    
     return True
 
 
 def generate_prime(bits=16):
     while True:
         p = random.getrandbits(bits)
+        # Ensure odd and high bit set
+        p |= (1 << bits - 1) | 1
         if is_prime(p):
             return p
 

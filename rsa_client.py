@@ -6,28 +6,39 @@ from des import (
     des_encrypt_cbc, des_decrypt_cbc
 )
 import os
+import random
+import string
 
 
 def start_client(host, port, key, iv, mode):
-    # ==== IF KEY OR IV NOT PROVIDED ====
+
+    # kalo key ma iv gadikasi, generate random
     if key is None:
         key = input("Masukkan DES KEY (8 chars) atau tekan Enter untuk random: ")
         if key == "":
-            key = os.urandom(8).decode(errors="ignore")[:8]
+            # Generate random 8-byte key using printable ASCII
+            key = ''.join(random.choices(string.ascii_letters + string.digits, k=8))
+        elif len(key) != 8:
+            print(f"Warning: Key harus 8 karakter, padding/truncating dari {len(key)} ke 8")
+            key = (key + '0' * 8)[:8]
         print("DES KEY =", key)
 
     if iv is None:
         iv = input("Masukkan DES IV (8 chars) atau tekan Enter untuk random: ")
         if iv == "":
-            iv = os.urandom(8).decode(errors="ignore")[:8]
+            # Generate random 8-byte IV using printable ASCII
+            iv = ''.join(random.choices(string.ascii_letters + string.digits, k=8))
+        elif len(iv) != 8:
+            print(f"Warning: IV harus 8 karakter, padding/truncating dari {len(iv)} ke 8")
+            iv = (iv + '0' * 8)[:8]
         print("DES IV =", iv)
 
-    # ==== CONNECT ====
+    # Connect
     s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     s.connect((host, port))
     print(f"Connected to server {host}:{port} (mode: {mode.upper()})")
 
-    # ==== RECEIVE PUBLIC KEY ====
+    # Terima Public Key
     pub_bytes = s.recv(1024)
     public_key = import_public_key(pub_bytes)
     e, n = public_key
@@ -36,22 +47,27 @@ def start_client(host, port, key, iv, mode):
     print("e =", e)
     print("n =", n)
 
-    # ==== CREATE SESSION ====
+    # Create Session
     key_bytes = key.encode()
     iv_bytes = iv.encode()
 
-    session = key_bytes + iv_bytes
+    # Ensure exactly 8 bytes each
+    key_bytes = (key_bytes + b'\x00' * 8)[:8]
+    iv_bytes = (iv_bytes + b'\x00' * 8)[:8]
+
+    session = key_bytes + iv_bytes  # Total 16 bytes
     session_int = int.from_bytes(session, "big")
 
-    encrypted_session_int = rsa_encrypt(session_int, public_key)
+    # RSA encrypt the session integer
+    encrypted_session_int = pow(session_int, e, n)
     s.sendall(str(encrypted_session_int).encode())
 
     print("\nDES Session key dikirim.")
-    print("\n===== Chat dimulai =====\n")
+    print("\nChat Starting\n")
 
-    # ==== CHAT LOOP ====
+    # Chat
     while True:
-        msg = input("Client > ")
+        msg = input("Client: ")
 
         if msg.lower() == "exit":
             s.sendall(b"exit")
@@ -76,6 +92,18 @@ def start_client(host, port, key, iv, mode):
         else:
             reply_plain = des_decrypt_ecb(reply_cipher, key)
 
-        print("Server >", reply_plain)
+        print("Server: ", reply_plain)
 
     s.close()
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--host", default="127.0.0.1")
+    parser.add_argument("--port", type=int, default=65433)
+    parser.add_argument("--key", default=None)
+    parser.add_argument("--iv", default=None)
+    parser.add_argument("--mode", choices=["ecb", "cbc"], default="ecb")
+    args = parser.parse_args()
+
+    start_client(args.host, args.port, args.key, args.iv, args.mode)
